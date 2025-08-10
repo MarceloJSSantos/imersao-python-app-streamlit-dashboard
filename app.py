@@ -11,8 +11,7 @@ st.set_page_config(
 )
 
 # --- Carregamento dos dados ---
-local_arquivo = st.secrets["LS"]
-#df = pd.read_csv("https://raw.githubusercontent.com/vqrca/dashboard_salarios_dados/refs/heads/main/dados-imersao-final.csv")
+local_arquivo = st.secrets["LOCAL_ARQUIVO_DADOS"]
 df = pd.read_csv(local_arquivo)
 
 # --- Barra Lateral (Filtros) ---
@@ -34,13 +33,18 @@ contratos_selecionados = st.sidebar.multiselect("Tipo de Contrato", contratos_di
 tamanhos_disponiveis = sorted(df['tamanho_empresa'].unique())
 tamanhos_selecionados = st.sidebar.multiselect("Tamanho da Empresa", tamanhos_disponiveis, default=tamanhos_disponiveis)
 
+# Filtro por Cargo
+cargos_disponiveis = sorted(df['cargo'].unique())
+cargos_selecionados = st.sidebar.multiselect("Cargo", cargos_disponiveis, default=cargos_disponiveis)
+
 # --- Filtragem do DataFrame ---
 # O dataframe principal é filtrado com base nas seleções feitas na barra lateral.
 df_filtrado = df[
     (df['ano'].isin(anos_selecionados)) &
     (df['senioridade'].isin(senioridades_selecionadas)) &
     (df['contrato'].isin(contratos_selecionados)) &
-    (df['tamanho_empresa'].isin(tamanhos_selecionados))
+    (df['tamanho_empresa'].isin(tamanhos_selecionados)) &
+    (df['cargo'].isin(cargos_selecionados))
 ]
 
 # --- Conteúdo Principal ---
@@ -51,18 +55,34 @@ st.markdown("Explore os dados salariais na área de dados nos últimos anos. Uti
 st.subheader("Métricas gerais (Salário anual em USD)")
 
 if not df_filtrado.empty:
+    salario_minimo = df_filtrado['usd'].min()
     salario_medio = df_filtrado['usd'].mean()
     salario_maximo = df_filtrado['usd'].max()
     total_registros = df_filtrado.shape[0]
     cargo_mais_frequente = df_filtrado["cargo"].mode()[0]
 else:
-    salario_medio, salario_mediano, salario_maximo, total_registros, cargo_mais_comum = 0, 0, 0, ""
+    salario_minimo, salario_medio, salario_mediano, salario_maximo, total_registros, cargo_mais_comum = 0, 0, 0, 0, ""
 
-col1, col2, col3, col4 = st.columns(4)
-col1.metric("Salário médio", f"${salario_medio:,.0f}")
-col2.metric("Salário máximo", f"${salario_maximo:,.0f}")
-col3.metric("Total de registros", f"{total_registros:,}")
-col4.metric("Cargo mais frequente", cargo_mais_frequente)
+# Função para criar um "metric" customizado
+def custom_metric(column, label, value):
+    column.markdown(f'<p style="font-size: 14px; color: grey;">{label}</p>', unsafe_allow_html=True)
+    column.markdown(f'<p style="font-size: 24px; font-weight: bold;">{value}</p>', unsafe_allow_html=True)
+
+col1, col2, col3, col4, col5 = st.columns(5)
+# Aplica a função para cada coluna
+custom_metric(col1, "Salário mínimo", f"${salario_minimo:,.0f}")
+custom_metric(col2, "Salário médio", f"${salario_medio:,.0f}")
+custom_metric(col3, "Salário máximo", f"${salario_maximo:,.0f}")
+custom_metric(col4, "Total de registros", f"{total_registros:,}")
+
+# Para o cargo, o tamanho da fonte precisa ser dinâmico
+cargo = cargo_mais_frequente
+font_size = 24  # Tamanho da fonte padrão
+if len(cargo) > 15: # Exemplo de lógica para diminuir a fonte
+    font_size = 18
+
+col5.markdown(f'<p style="font-size: 14px; color: grey;">Cargo mais frequente</p>', unsafe_allow_html=True)
+col5.markdown(f'<p style="font-size: {font_size}px; font-weight: bold;">{cargo}</p>', unsafe_allow_html=True)
 
 st.markdown("---")
 
@@ -134,6 +154,40 @@ with col_graf4:
         st.plotly_chart(grafico_paises, use_container_width=True)
     else:
         st.warning("Nenhum dado para exibir no gráfico de países.")
+
+#col_graf5 = st.columns(2)
+
+#ith col_graf5:
+if not df_filtrado.empty:
+    top_cargos = df_filtrado.groupby('cargo')['usd'].mean().nlargest(10).sort_values(ascending=True).reset_index()
+    # Título longo
+    titulo_do_grafico = "Top 10 cargos por salário médio (com ajuste dinâmico do tamanho da fonte)"
+
+    # Lógica para ajustar o tamanho da fonte dinamicamente
+    font_size = 20  # Tamanho padrão
+    if len(titulo_do_grafico) > 50:
+        font_size = 14
+
+    grafico_cargos = px.bar(
+        top_cargos,
+        x='usd',
+        y='cargo',
+        orientation='h',
+        labels={'usd': 'Média salarial anual (USD)', 'cargo': ''}
+    )
+    grafico_cargos.update_layout(
+        title_x=0.1,
+        yaxis={'categoryorder':'total ascending'},
+        title={
+            'text': titulo_do_grafico,
+            'font': {'size': font_size}
+        }
+    )
+    st.plotly_chart(grafico_cargos)
+else:
+    st.warning("Nenhum dado para exibir no gráfico de cargos.")
+
+st.markdown("---")
 
 # --- Tabela de Dados Detalhados ---
 st.subheader("Dados Detalhados")
